@@ -108,14 +108,14 @@ jobs:
           sudo umount /mnt/vmroot
           sudo losetup -d ${{ steps.loopdev.outputs.loopdev }}
 
-      - name: Convert raw → qcow2 (compressed)
+      - name: Convert to qcow2
         run: |
-          qemu-img convert -O qcow2 -c $IMG $QCOW
+          qemu-img convert -O qcow2 $IMG $QCOW
 
       - name: Create SHA256
         run: sha256sum $QCOW > $QCOW.sha256
 
-      - name: Create (or update) GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
