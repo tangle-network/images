@@ -70,7 +70,7 @@ jobs:
       - name: Stage files
         run: |
           sudo mkdir -p /mnt/vmroot/tmp/build
-          sudo cp -r root/ /mnt/vmroot/tmp/build/
+          sudo cp -r root/* /mnt/vmroot/tmp/build/
 
       - name: Chroot configure system
         run: |
