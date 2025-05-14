@@ -114,8 +114,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            $QCOW
-            $QCOW.sha256
+            ${{ env.QCOW }}
+            ${{ env.QCOW }}.sha256
           tag_name: ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
