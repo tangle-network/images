@@ -1,0 +1,121 @@
+name: Build Debian Base VM
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+
+env:
+  DISK_SIZE: 2G
+  IMG:     debian.raw
+  QCOW:    debian-base.qcow2
+  DEBIAN_SUITE: stable
+  HOST_MIRROR: http://deb.debian.org/debian
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+               debootstrap gdisk parted dosfstools \
+               grub-efi-amd64-bin grub-common \
+               qemu-utils
+
+      - name: Allocate sparse disk
+        run: fallocate -l $DISK_SIZE $IMG
+
+      - name: Partition disk (GPT)
+        run: |
+          sudo parted --script $IMG \
+            mklabel gpt \
+            mkpart ESP fat32 1MiB 513MiB \
+            set 1 esp on \
+            mkpart primary ext4 513MiB 100%
+
+      - name: Setup loop device
+        id: loopdev
+        run: |
+          LOOP=$(sudo losetup -fP --show $IMG)
+          echo "loopdev=$LOOP" >> $GITHUB_OUTPUT
+
+      - name: Make filesystems
+        run: |
+          LOOP=${{ steps.loopdev.outputs.loopdev }}
+          sudo mkfs.vfat -n EFI "${LOOP}p1"
+          sudo mkfs.ext4 -L rootfs "${LOOP}p2"
+
+      - name: Mount filesystems
+        run: |
+          sudo mkdir -p /mnt/vmroot
+          LOOP=${{ steps.loopdev.outputs.loopdev }}
+          sudo mount "${LOOP}p2" /mnt/vmroot
+          sudo mkdir -p /mnt/vmroot/boot/efi
+          sudo mount "${LOOP}p1" /mnt/vmroot/boot/efi
+
+      - name: Debootstrap minimal Debian
+        run: |
+          sudo debootstrap --arch amd64 --variant=minbase \
+               $DEBIAN_SUITE /mnt/vmroot $HOST_MIRROR
+
+      - name: Stage files
+        run: |
+          sudo mkdir -p /mnt/vmroot/tmp/build
+          sudo cp -r root/ /mnt/vmroot/tmp/build/
+
+      - name: Chroot configure system
+        run: |
+          LOOP=${{ steps.loopdev.outputs.loopdev }}
+          sudo mount --bind /dev  /mnt/vmroot/dev
+          sudo mount --bind /proc /mnt/vmroot/proc
+          sudo mount --bind /sys  /mnt/vmroot/sys
+          
+          sudo chroot /mnt/vmroot /bin/bash -eux <<'EOF'
+            apt-get update
+            apt-get install -y linux-image-amd64 grub-efi-amd64 systemd-sysv
+          
+            cp /tmp/build/etc/fstab /etc/fstab
+          
+            cp /tmp/build/etc/systemd/system/launch.service /etc/systemd/system/launch.service
+            ln -s ../launch.service /etc/systemd/system/multi-user.target.wants/launch.service
+          
+            grub-install --target=x86_64-efi --efi-directory=/boot/efi \
+                         --bootloader-id=debian --no-nvram --removable
+            update-grub
+          
+            apt-get clean
+          EOF
+          
+          sudo umount /mnt/vmroot/dev /mnt/vmroot/proc /mnt/vmroot/sys
+
+      - name: Unmount and detach loop
+        run: |
+          sudo umount /mnt/vmroot/boot/efi
+          sudo umount /mnt/vmroot
+          sudo losetup -d ${{ steps.loopdev.outputs.loopdev }}
+
+      - name: Convert raw → qcow2 (compressed)
+        run: |
+          qemu-img convert -O qcow2 -c $IMG $QCOW
+
+      - name: Create SHA256
+        run: sha256sum $QCOW > $QCOW.sha256
+
+      - name: Create (or update) GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            $QCOW
+            $QCOW.sha256
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,12 @@
+[Unit]
+Description=Service Launcher
+After=srv.mount
+
+[Service]
+Type=exec
+ExecStart=/srv/launch
+Restart=no
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

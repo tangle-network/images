@@ -1,0 +1,1 @@
+LABEL=SERVICEDISK  /srv  vfat  ro,defaults,nofail  0  0
