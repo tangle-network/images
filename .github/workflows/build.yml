@@ -10,6 +10,7 @@ env:
   DISK_SIZE: 2G
   IMG:     debian.raw
   QCOW:    debian-base.qcow2
+  EXTRACTED_KERNEL_ZIP: kernel-extracted.zip
   DEBIAN_SUITE: stable
   HOST_MIRROR: http://deb.debian.org/debian
 
@@ -23,13 +24,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Get commit info
+        id: commit_info
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Install build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
                debootstrap gdisk parted dosfstools \
                grub-efi-amd64-bin grub-common \
-               qemu-utils
+               qemu-utils libguestfs-tools
 
       - name: Allocate sparse disk
         run: fallocate -l $DISK_SIZE $IMG
@@ -70,7 +76,7 @@ jobs:
       - name: Stage files
         run: |
           sudo mkdir -p /mnt/vmroot/tmp/build
-          sudo cp -r root/ /mnt/vmroot/tmp/build/
+          sudo cp -r root/* /mnt/vmroot/tmp/build/
 
       - name: Chroot configure system
         run: |
@@ -83,10 +89,13 @@ jobs:
             apt-get update
             apt-get install -y linux-image-amd64 grub-efi-amd64 systemd-sysv
           
+            echo "root:root" | chpasswd
+          
             cp /tmp/build/etc/fstab /etc/fstab
           
-            cp /tmp/build/etc/systemd/system/launch.service /etc/systemd/system/launch.service
-            ln -s ../launch.service /etc/systemd/system/multi-user.target.wants/launch.service
+            install -m 0644 /tmp/build/etc/systemd/system/launch.service /etc/systemd/system/launch.service
+          
+            systemctl enable launch.service
           
             grub-install --target=x86_64-efi --efi-directory=/boot/efi \
                          --bootloader-id=debian --no-nvram --removable
@@ -103,19 +112,32 @@ jobs:
           sudo umount /mnt/vmroot
           sudo losetup -d ${{ steps.loopdev.outputs.loopdev }}
 
-      - name: Convert raw → qcow2 (compressed)
+      - name: Convert to qcow2
         run: |
-          qemu-img convert -O qcow2 -c $IMG $QCOW
+          qemu-img convert -O qcow2 $IMG $QCOW
 
+      - name: Extract kernel & initrd
+        env:
+          LIBGUESTFS_DEBUG: 1
+          LIBGUESTFS_TRACE: 1
+        run: |
+          mkdir kernel
+          sudo virt-get-kernel -a $QCOW --unversioned-names -o kernel
+          zip -j $EXTRACTED_KERNEL_ZIP kernel/vmlinuz kernel/initrd.img
+          
       - name: Create SHA256
-        run: sha256sum $QCOW > $QCOW.sha256
+        run: |
+          sha256sum $QCOW > $QCOW.sha256
+          sha256sum $EXTRACTED_KERNEL_ZIP > $EXTRACTED_KERNEL_ZIP.sha256
 
-      - name: Create (or update) GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            $QCOW
-            $QCOW.sha256
-          tag_name: ${{ github.ref_name }}
+            ${{ env.QCOW }}
+            ${{ env.QCOW }}.sha256
+            ${{ env.EXTRACTED_KERNEL_ZIP }}
+            ${{ env.EXTRACTED_KERNEL_ZIP }}.sha256
+          tag_name: tangle-debian-${{ steps.commit_info.outputs.sha_short }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
