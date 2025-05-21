@@ -78,16 +78,15 @@ jobs:
           sudo mkdir -p /mnt/vmroot/tmp/build
           sudo cp -r root/* /mnt/vmroot/tmp/build/
 
-      - name: Chroot configure system
+      - name: Chroot configure and extract kernel
         run: |
           LOOP=${{ steps.loopdev.outputs.loopdev }}
           sudo mount --bind /dev  /mnt/vmroot/dev
           sudo mount --bind /proc /mnt/vmroot/proc
           sudo mount --bind /sys  /mnt/vmroot/sys
-          
+
           sudo chroot /mnt/vmroot /bin/bash -eux <<'EOF'
             apt-get update
-
             apt-get install -y --no-install-recommends \
               linux-generic initramfs-tools systemd-sysv
 
@@ -97,15 +96,19 @@ jobs:
             install -m 0644 /tmp/build/etc/systemd/system/launch.service \
                     /etc/systemd/system/launch.service
             systemctl enable launch.service
+          EOF
 
-            cp /boot/vmlinuz-* /tmp/build/vmlinuz
-            cp /boot/initrd.img-* /tmp/build/initrd.img
+          mkdir -p kernel
+          sudo cp /mnt/vmroot/boot/vmlinuz-*   kernel/vmlinuz
+          sudo cp /mnt/vmroot/boot/initrd.img-* kernel/initrd.img
+          sudo chown $(id -u):$(id -g) kernel/*
 
+          sudo chroot /mnt/vmroot /bin/bash -eux <<'EOF'
             apt-get purge -y linux-generic initramfs-tools linux-image-*
             apt-get autoremove -y
             apt-get clean
           EOF
-          
+
           sudo umount /mnt/vmroot/dev /mnt/vmroot/proc /mnt/vmroot/sys
 
       - name: Unmount and detach loop
@@ -121,8 +124,8 @@ jobs:
       - name: Package extracted kernel & initrd
         run: |
           zip -j $EXTRACTED_KERNEL_ZIP \
-            tmp/build/vmlinuz \
-            tmp/build/initrd.img
+            kernel/vmlinuz \
+            kernel/initrd.img
 
       - name: Create SHA256
         run: |
