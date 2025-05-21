@@ -87,7 +87,7 @@ jobs:
           
           sudo chroot /mnt/vmroot /bin/bash -eux <<'EOF'
             apt-get update
-            apt-get install -y linux-image-amd64 grub-efi-amd64 systemd-sysv
+            apt-get install -y linux-generic grub-efi-amd64 systemd-sysv
           
             echo "root:root" | chpasswd
           
