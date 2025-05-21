@@ -21,7 +21,6 @@ jobs:
       contents: write
 
     steps:
-      - uses: ./.github/actions/free-disk-space
       - name: Checkout
         uses: actions/checkout@v3
 
@@ -30,6 +29,7 @@ jobs:
         run: |
           echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
+      - uses: ./.github/actions/free-disk-space
       - name: Install build tools
         run: |
           sudo apt-get update
