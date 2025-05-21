@@ -34,7 +34,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
                debootstrap gdisk parted dosfstools \
-               grub-efi-amd64-bin grub-common \
                qemu-utils libguestfs-tools
 
       - name: Allocate sparse disk
@@ -87,16 +86,22 @@ jobs:
           
           sudo chroot /mnt/vmroot /bin/bash -eux <<'EOF'
             apt-get update
-            apt-get install -y systemd-sysv
-          
+
+            apt-get install -y --no-install-recommends \
+              linux-generic initramfs-tools systemd-sysv
+
             echo "root:root" | chpasswd
-          
+
             cp /tmp/build/etc/fstab /etc/fstab
-          
-            install -m 0644 /tmp/build/etc/systemd/system/launch.service /etc/systemd/system/launch.service
-          
+            install -m 0644 /tmp/build/etc/systemd/system/launch.service \
+                    /etc/systemd/system/launch.service
             systemctl enable launch.service
-          
+
+            cp /boot/vmlinuz-* /tmp/build/vmlinuz
+            cp /boot/initrd.img-* /tmp/build/initrd.img
+
+            apt-get purge -y linux-generic initramfs-tools linux-image-*
+            apt-get autoremove -y
             apt-get clean
           EOF
           
@@ -112,15 +117,12 @@ jobs:
         run: |
           qemu-img convert -O qcow2 $IMG $QCOW
 
-      - name: Extract kernel & initrd
-        env:
-          LIBGUESTFS_DEBUG: 1
-          LIBGUESTFS_TRACE: 1
+      - name: Package extracted kernel & initrd
         run: |
-          mkdir kernel
-          sudo virt-get-kernel -a $QCOW --unversioned-names -o kernel
-          zip -j $EXTRACTED_KERNEL_ZIP kernel/vmlinuz kernel/initrd.img
-          
+          zip -j $EXTRACTED_KERNEL_ZIP \
+            tmp/build/vmlinuz \
+            tmp/build/initrd.img
+
       - name: Create SHA256
         run: |
           sha256sum $QCOW > $QCOW.sha256
