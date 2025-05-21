@@ -1,4 +1,4 @@
-name: Build Debian Base VM
+name: Build Ubuntu Base VM
 
 on:
   workflow_dispatch:
@@ -8,11 +8,11 @@ on:
 
 env:
   DISK_SIZE: 2G
-  IMG:     debian.raw
-  QCOW:    debian-base.qcow2
+  IMG:     ubuntu.raw
+  QCOW:    ubuntu-base.qcow2
   EXTRACTED_KERNEL_ZIP: kernel-extracted.zip
-  DEBIAN_SUITE: stable
-  HOST_MIRROR: http://deb.debian.org/debian
+  UBUNTU_RELEASE: noble
+  HOST_MIRROR: http://archive.ubuntu.com/ubuntu
 
 jobs:
   build:
@@ -68,10 +68,10 @@ jobs:
           sudo mkdir -p /mnt/vmroot/boot/efi
           sudo mount "${LOOP}p1" /mnt/vmroot/boot/efi
 
-      - name: Debootstrap minimal Debian
+      - name: Debootstrap minimal Ubuntu
         run: |
           sudo debootstrap --arch amd64 --variant=minbase \
-               $DEBIAN_SUITE /mnt/vmroot $HOST_MIRROR
+               $UBUNTU_RELEASE /mnt/vmroot $HOST_MIRROR
 
       - name: Stage files
         run: |
@@ -98,7 +98,7 @@ jobs:
             systemctl enable launch.service
           
             grub-install --target=x86_64-efi --efi-directory=/boot/efi \
-                         --bootloader-id=debian --no-nvram --removable
+                         --bootloader-id=ubuntu --no-nvram --removable
             update-grub
           
             apt-get clean
@@ -138,6 +138,6 @@ jobs:
             ${{ env.QCOW }}.sha256
             ${{ env.EXTRACTED_KERNEL_ZIP }}
             ${{ env.EXTRACTED_KERNEL_ZIP }}.sha256
-          tag_name: tangle-debian-${{ steps.commit_info.outputs.sha_short }}
+          tag_name: tangle-ubuntu-${{ steps.commit_info.outputs.sha_short }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
