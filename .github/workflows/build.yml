@@ -44,7 +44,7 @@ jobs:
       - name: Mount root partition
         run: |
           sudo mkdir -p /mnt/vmroot
-          sudo mount /dev/nbd0p2 /mnt/vmroot
+          sudo mount /dev/nbd0p1 /mnt/vmroot
 
       - name: Stage files
         run: |
