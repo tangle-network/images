@@ -10,6 +10,8 @@ env:
   QCOW: ubuntu-base.qcow2
   EXTRACTED_KERNEL_ZIP: kernel-extracted.zip
   CLOUDIMG_URL: https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
+  VMLINUZ_URL: https://cloud-images.ubuntu.com/releases/releases/24.04/release/unpacked/ubuntu-24.04-server-cloudimg-amd64-vmlinuz-generic
+  INITRD_URL: https://cloud-images.ubuntu.com/releases/releases/24.04/release/unpacked/ubuntu-24.04-server-cloudimg-amd64-initrd-generic
 
 jobs:
   build:
@@ -33,8 +35,17 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             qemu-utils libguestfs-tools
 
-      - name: Download Ubuntu cloud image
-        run: curl -L -o $QCOW $CLOUDIMG_URL
+      - name: Download Ubuntu cloud image & kernel
+        run: |
+          curl -L -o $QCOW $CLOUDIMG_URL
+          
+          mkdir kernel
+          curl -L $VMLINUZ_URL -o kernel/vmlinuz
+          curl -L $INITRD_URL -o kernel/initrd.img
+          
+          zip -j $EXTRACTED_KERNEL_ZIP \
+            kernel/vmlinuz \
+            kernel/initrd.img
 
       - name: Attach via NBD
         run: |
@@ -78,17 +89,6 @@ jobs:
         run: |
           sudo umount /mnt/vmroot
           sudo qemu-nbd --disconnect /dev/nbd0
-
-      - name: Extract kernel & initrd
-        env:
-          LIBGUESTFS_DEBUG: 1
-          LIBGUESTFS_TRACE: 1
-        run: |
-          mkdir kernel
-          sudo virt-get-kernel -a $QCOW --unversioned-names -o kernel
-          zip -j $EXTRACTED_KERNEL_ZIP \
-            kernel/vmlinuz \
-            kernel/initrd.img
 
       - name: Create SHA256
         run: |
