@@ -51,6 +51,9 @@ jobs:
           sudo mkdir -p /mnt/vmroot/tmp/build
           sudo cp -r root/* /mnt/vmroot/tmp/build/
 
+      - name: Bind DNS into chroot
+        run: sudo mount --bind /etc/resolv.conf /mnt/vmroot/etc/resolv.conf
+
       - name: Chroot configure and enable services
         run: |
           sudo mount --bind /dev  /mnt/vmroot/dev
