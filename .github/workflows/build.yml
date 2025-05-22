@@ -7,13 +7,9 @@ on:
       - '**[0-9]+.[0-9]+.[0-9]+*'
 
 env:
-  DISK_SIZE: 4G
-  IMG:     ubuntu.raw
-  QCOW:    ubuntu-base.qcow2
+  QCOW: ubuntu-base.qcow2
   EXTRACTED_KERNEL_ZIP: kernel-extracted.zip
-  UBUNTU_RELEASE: noble
-  HOST_MIRROR: http://archive.ubuntu.com/ubuntu
-  INCLUDE_PACKAGES: udev,initramfs-tools,systemd-sysv
+  CLOUDIMG_URL: https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
 
 jobs:
   build:
@@ -27,68 +23,45 @@ jobs:
 
       - name: Get commit info
         id: commit_info
-        run: |
-          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - uses: ./.github/actions/free-disk-space
+
       - name: Install build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-               debootstrap gdisk parted dosfstools \
-               qemu-utils libguestfs-tools
+            qemu-utils libguestfs-tools
 
-      - name: Allocate sparse disk
-        run: fallocate -l $DISK_SIZE $IMG
+      - name: Download Ubuntu 24.04 cloud image
+        run: curl -L -o $QCOW $CLOUDIMG_URL
 
-      - name: Partition disk (GPT)
+      - name: Attach image via NBD
         run: |
-          sudo parted --script $IMG \
-            mklabel gpt \
-            mkpart ESP fat32 1MiB 513MiB \
-            set 1 esp on \
-            mkpart primary ext4 513MiB 100%
+          sudo modprobe nbd max_part=8
+          sudo qemu-nbd --connect=/dev/nbd0 $QCOW
 
-      - name: Setup loop device
-        id: loopdev
-        run: |
-          LOOP=$(sudo losetup -fP --show $IMG)
-          echo "loopdev=$LOOP" >> $GITHUB_OUTPUT
-
-      - name: Make filesystems
-        run: |
-          LOOP=${{ steps.loopdev.outputs.loopdev }}
-          sudo mkfs.vfat -n EFI "${LOOP}p1"
-          sudo mkfs.ext4 -L rootfs "${LOOP}p2"
-
-      - name: Mount filesystems
+      - name: Mount image
         run: |
           sudo mkdir -p /mnt/vmroot
-          LOOP=${{ steps.loopdev.outputs.loopdev }}
-          sudo mount "${LOOP}p2" /mnt/vmroot
+          sudo mount /dev/nbd0p2 /mnt/vmroot
           sudo mkdir -p /mnt/vmroot/boot/efi
-          sudo mount "${LOOP}p1" /mnt/vmroot/boot/efi
-
-      - name: Debootstrap minimal Ubuntu
-        run: |
-          sudo debootstrap --arch amd64 --variant=minbase --include=$INCLUDE_PACKAGES \
-               $UBUNTU_RELEASE /mnt/vmroot $HOST_MIRROR
+          sudo mount /dev/nbd0p1 /mnt/vmroot/boot/efi
 
       - name: Stage files
         run: |
           sudo mkdir -p /mnt/vmroot/tmp/build
           sudo cp -r root/* /mnt/vmroot/tmp/build/
 
-      - name: Chroot configure and extract kernel
+      - name: Chroot configure and enable services
         run: |
-          LOOP=${{ steps.loopdev.outputs.loopdev }}
           sudo mount --bind /dev  /mnt/vmroot/dev
           sudo mount --bind /proc /mnt/vmroot/proc
           sudo mount --bind /sys  /mnt/vmroot/sys
 
-          sudo chroot /mnt/vmroot /bin/bash -eux <<'EOF'
+          sudo chroot /mnt/vmroot bash -eux <<'EOF'
             apt-get update
-            apt-get install -y --no-install-recommends linux-generic
+            apt-get install -y docker.io
 
             echo "root:root" | chpasswd
 
@@ -96,33 +69,26 @@ jobs:
             install -m 0644 /tmp/build/etc/systemd/system/launch.service \
                     /etc/systemd/system/launch.service
             systemctl enable launch.service
-          EOF
-
-          mkdir -p kernel
-          sudo cp /mnt/vmroot/boot/vmlinuz-*   kernel/vmlinuz
-          sudo cp /mnt/vmroot/boot/initrd.img-* kernel/initrd.img
-          sudo chown $(id -u):$(id -g) kernel/*
-
-          sudo chroot /mnt/vmroot /bin/bash -eux <<'EOF'
-            apt-get purge -y linux-generic initramfs-tools linux-image-*
-            apt-get autoremove -y
+            systemctl enable docker
+            
             apt-get clean
           EOF
 
           sudo umount /mnt/vmroot/dev /mnt/vmroot/proc /mnt/vmroot/sys
 
-      - name: Unmount and detach loop
+      - name: Unmount and detach NBD
         run: |
           sudo umount /mnt/vmroot/boot/efi
           sudo umount /mnt/vmroot
-          sudo losetup -d ${{ steps.loopdev.outputs.loopdev }}
+          sudo qemu-nbd --disconnect /dev/nbd0
 
-      - name: Convert to qcow2
+      - name: Extract kernel & initrd
+        env:
+          LIBGUESTFS_DEBUG: 1
+          LIBGUESTFS_TRACE: 1
         run: |
-          qemu-img convert -O qcow2 $IMG $QCOW
-
-      - name: Package extracted kernel & initrd
-        run: |
+          mkdir kernel
+          sudo virt-get-kernel -a $QCOW --unversioned-names -o kernel
           zip -j $EXTRACTED_KERNEL_ZIP \
             kernel/vmlinuz \
             kernel/initrd.img
