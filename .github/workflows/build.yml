@@ -44,15 +44,15 @@ jobs:
       - name: Mount root partition
         run: |
           sudo mkdir -p /mnt/vmroot
-          sudo mount /dev/nbd0p1 /mnt/vmroot
+          sudo mount /dev/nbd0p2 /mnt/vmroot
 
       - name: Stage files
         run: |
           sudo mkdir -p /mnt/vmroot/tmp/build
           sudo cp -r root/* /mnt/vmroot/tmp/build/
 
-      - name: Bind DNS into chroot
-        run: sudo mount --bind /etc/resolv.conf /mnt/vmroot/etc/resolv.conf
+      - name: Copy DNS into chroot
+        run: sudo cp /etc/resolv.conf /mnt/vmroot/etc/resolv.conf
 
       - name: Chroot configure and enable services
         run: |
