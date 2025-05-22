@@ -33,20 +33,18 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             qemu-utils libguestfs-tools
 
-      - name: Download Ubuntu 24.04 cloud image
+      - name: Download Ubuntu cloud image
         run: curl -L -o $QCOW $CLOUDIMG_URL
 
-      - name: Attach image via NBD
+      - name: Attach via NBD
         run: |
           sudo modprobe nbd max_part=8
           sudo qemu-nbd --connect=/dev/nbd0 $QCOW
 
-      - name: Mount image
+      - name: Mount root partition
         run: |
           sudo mkdir -p /mnt/vmroot
-          sudo mount /dev/nbd0p2 /mnt/vmroot
-          sudo mkdir -p /mnt/vmroot/boot/efi
-          sudo mount /dev/nbd0p1 /mnt/vmroot/boot/efi
+          sudo mount /dev/nbd0p1 /mnt/vmroot
 
       - name: Stage files
         run: |
@@ -66,8 +64,7 @@ jobs:
             echo "root:root" | chpasswd
 
             cp /tmp/build/etc/fstab /etc/fstab
-            install -m 0644 /tmp/build/etc/systemd/system/launch.service \
-                    /etc/systemd/system/launch.service
+            install -m 0644 /tmp/build/etc/systemd/system/launch.service /etc/systemd/system/launch.service
             systemctl enable launch.service
             systemctl enable docker
             
@@ -78,7 +75,6 @@ jobs:
 
       - name: Unmount and detach NBD
         run: |
-          sudo umount /mnt/vmroot/boot/efi
           sudo umount /mnt/vmroot
           sudo qemu-nbd --disconnect /dev/nbd0
 
