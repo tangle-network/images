@@ -50,9 +50,7 @@ jobs:
         run: |
           sudo mkdir -p /mnt/vmroot/tmp/build
           sudo cp -r root/* /mnt/vmroot/tmp/build/
-
-      - name: Copy DNS into chroot
-        run: sudo cp /etc/resolv.conf /mnt/vmroot/etc/resolv.conf
+          sudo mount --bind /etc/resolv.conf /mnt/vmroot/etc/resolv.conf
 
       - name: Chroot configure and enable services
         run: |
