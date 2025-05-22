@@ -59,14 +59,13 @@ jobs:
 
           sudo chroot /mnt/vmroot bash -eux <<'EOF'
             apt-get update
-            apt-get install -y docker.io
+            bash /tmp/build/install-docker.sh
 
             echo "root:root" | chpasswd
 
             cp /tmp/build/etc/fstab /etc/fstab
             install -m 0644 /tmp/build/etc/systemd/system/launch.service /etc/systemd/system/launch.service
             systemctl enable launch.service
-            systemctl enable docker
             
             apt-get clean
           EOF
